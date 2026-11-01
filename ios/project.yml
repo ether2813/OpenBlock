@@ -1,0 +1,174 @@
+# XcodeGen spec. Generate the Xcode project with:  cd ios && xcodegen generate
+name: OpenBlock
+
+options:
+  bundleIdPrefix: com.openblock
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+  developmentLanguage: en
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    TARGETED_DEVICE_FAMILY: "1"
+    IPHONEOS_DEPLOYMENT_TARGET: "16.0"
+    CODE_SIGN_STYLE: Automatic
+    DEAD_CODE_STRIPPING: YES
+    GENERATE_INFOPLIST_FILE: NO
+
+targetTemplates:
+  ScreenTimeExtension:
+    type: app-extension
+    platform: iOS
+    settings:
+      base:
+        APPLICATION_EXTENSION_API_ONLY: YES
+        SKIP_INSTALL: YES
+
+targets:
+  OpenBlock:
+    type: application
+    platform: iOS
+    sources:
+      - path: App
+      - path: Shared
+      - path: ReportShared
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: OpenBlock
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSRequiresIPhoneOS: true
+        UILaunchScreen: {}
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        UIRequiredDeviceCapabilities:
+          - arm64
+        ITSAppUsesNonExemptEncryption: false
+    entitlements:
+      path: App/OpenBlock.entitlements
+      properties:
+        com.apple.developer.family-controls: true
+        com.apple.security.application-groups:
+          - group.com.openblock.app
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.openblock.app
+        PRODUCT_NAME: OpenBlock
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+    dependencies:
+      - target: OpenBlockMonitor
+      - target: OpenBlockShieldConfiguration
+      - target: OpenBlockShieldAction
+      - target: OpenBlockReport
+
+  OpenBlockMonitor:
+    templates: [ScreenTimeExtension]
+    sources:
+      - path: Extensions/Monitor
+      - path: Shared
+    info:
+      path: Extensions/Monitor/Info.plist
+      properties:
+        CFBundleDisplayName: OpenBlock Monitor
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.deviceactivity.monitor-extension
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).DeviceActivityMonitorExtension
+    entitlements:
+      path: Extensions/Monitor/Monitor.entitlements
+      properties:
+        com.apple.developer.family-controls: true
+        com.apple.security.application-groups:
+          - group.com.openblock.app
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.openblock.app.monitor
+
+  OpenBlockShieldConfiguration:
+    templates: [ScreenTimeExtension]
+    sources:
+      - path: Extensions/ShieldConfiguration
+      - path: Shared
+    info:
+      path: Extensions/ShieldConfiguration/Info.plist
+      properties:
+        CFBundleDisplayName: OpenBlock Shield
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.ManagedSettingsUI.shield-configuration-service
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShieldConfigurationExtension
+    entitlements:
+      path: Extensions/ShieldConfiguration/ShieldConfiguration.entitlements
+      properties:
+        com.apple.developer.family-controls: true
+        com.apple.security.application-groups:
+          - group.com.openblock.app
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.openblock.app.shield-configuration
+
+  OpenBlockShieldAction:
+    templates: [ScreenTimeExtension]
+    sources:
+      - path: Extensions/ShieldAction
+      - path: Shared
+    info:
+      path: Extensions/ShieldAction/Info.plist
+      properties:
+        CFBundleDisplayName: OpenBlock Shield Action
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.ManagedSettings.shield-action-service
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShieldActionExtension
+    entitlements:
+      path: Extensions/ShieldAction/ShieldAction.entitlements
+      properties:
+        com.apple.developer.family-controls: true
+        com.apple.security.application-groups:
+          - group.com.openblock.app
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.openblock.app.shield-action
+
+  OpenBlockReport:
+    templates: [ScreenTimeExtension]
+    sources:
+      - path: Extensions/Report
+      - path: Shared
+      - path: ReportShared
+    info:
+      path: Extensions/Report/Info.plist
+      properties:
+        CFBundleDisplayName: OpenBlock Insights
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.deviceactivityui.report-extension
+    entitlements:
+      path: Extensions/Report/Report.entitlements
+      properties:
+        com.apple.developer.family-controls: true
+        com.apple.security.application-groups:
+          - group.com.openblock.app
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.openblock.app.report
+
+schemes:
+  OpenBlock:
+    build:
+      targets:
+        OpenBlock: all
+    archive:
+      config: Release
