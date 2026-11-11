@@ -3,14 +3,15 @@ import CryptoKit
 
 /// App Group storage shared by the app and its extensions.
 ///
-/// The app owns `state`; extensions only ever write `limitHits`, so the two never overwrite each
-/// other's changes.
+/// The app owns `state`; extensions only ever write their own keys (limit hits, posted
+/// notifications), so the two never overwrite each other's changes.
 enum SharedStore {
     static let appGroup = "group.com.openblock.app"
 
     private static let stateKey = "openblock.state.v1"
     private static let hitsKey = "openblock.limitHits.v1"
     private static let signaturesKey = "openblock.activitySignatures.v1"
+    private static let notifiedKey = "openblock.notified.v1"
 
     static var defaults: UserDefaults {
         UserDefaults(suiteName: appGroup) ?? .standard
@@ -57,6 +58,19 @@ enum SharedStore {
         defaults.set(signatures, forKey: signaturesKey)
     }
 
+    // MARK: Notifications already posted
+
+    /// Returns true the first time it's called for `key` on `dayKey`, false on repeats, so a
+    /// notification is posted once even when iOS delivers the same callback again.
+    static func markNotified(_ key: String, dayKey: String) -> Bool {
+        var notified = defaults.dictionary(forKey: notifiedKey) as? [String: String] ?? [:]
+        if notified[key] == dayKey { return false }
+        notified = notified.filter { $0.value == dayKey }
+        notified[key] = dayKey
+        defaults.set(notified, forKey: notifiedKey)
+        return true
+    }
+
     // MARK: Helpers
 
     static func sha256(_ data: Data) -> String {
@@ -71,6 +85,8 @@ enum SharedStore {
 /// Event and activity names, shared so the monitor extension can map callbacks back to rules.
 enum ActivityNames {
     static let timePrefix = "time."
+    /// Second wake-up for windows that can't be monitored as one interval (overnight ones).
+    static let timeEndPrefix = "timeend."
     static let usagePrefix = "usage."
     static let limits = "limits"
     static let strict = "strict"

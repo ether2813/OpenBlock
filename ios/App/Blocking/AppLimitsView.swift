@@ -70,7 +70,7 @@ struct AppLimitsView: View {
                 if let websiteError {
                     Text(websiteError).foregroundStyle(.red)
                 } else {
-                    Text("Blocked at any time of day in Safari and in-app browsers, including subdomains.")
+                    Text("Blocked at any time of day in Safari and in-app browsers.")
                 }
             }
         }
@@ -95,6 +95,7 @@ struct AppLimitsView: View {
     }
 
     private func addWebsite() {
+        guard !websiteInput.trimmingCharacters(in: .whitespaces).isEmpty else { return }
         switch model.addGlobalWebsite(websiteInput) {
         case .added:
             websiteInput = ""

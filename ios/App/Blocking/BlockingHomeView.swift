@@ -20,9 +20,12 @@ struct BlockingHomeView: View {
                                 IconBadge(symbol: "lock.fill", color: .accentColor, size: 34)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text("Strict Mode is on").font(.headline).foregroundStyle(.primary)
-                                    Text(StrictStatus.line(for: model.state.strict, now: model.now, charging: model.isCharging))
-                                        .font(.subheadline)
-                                        .foregroundStyle(.secondary)
+                                    // Its own clock, so the countdown ticks without redrawing the list.
+                                    TimelineView(.periodic(from: .now, by: 1)) { context in
+                                        Text(StrictStatus.line(for: model.state.strict, now: context.date, charging: model.isCharging))
+                                            .font(.subheadline.monospacedDigit())
+                                            .foregroundStyle(.secondary)
+                                    }
                                 }
                                 Spacer()
                                 Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
@@ -137,7 +140,6 @@ struct ScheduleRow: View {
                 .labelsHidden()
         }
         .padding(.vertical, 4)
-        .accessibilityElement(children: .combine)
     }
 }
 

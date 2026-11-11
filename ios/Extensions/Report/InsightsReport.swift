@@ -8,9 +8,9 @@ import UIKit
 @main
 struct OpenBlockReportExtension: DeviceActivityReportExtension {
     var body: some DeviceActivityReportScene {
-        InsightsReport { summary in
-            InsightsReportView(summary: summary)
-        }
+        InsightsReport(context: .insightsDay, periodDays: 1) { InsightsReportView(summary: $0) }
+        InsightsReport(context: .insightsWeek, periodDays: 7) { InsightsReportView(summary: $0) }
+        InsightsReport(context: .insightsTwoWeeks, periodDays: 14) { InsightsReportView(summary: $0) }
     }
 }
 
@@ -29,39 +29,49 @@ struct InsightsSummary {
         var pickups: Int
     }
 
+    var periodDays = 1
     var total: TimeInterval = 0
+    /// One entry per day of the period, oldest first, including days without any usage.
     var days: [Day] = []
     var apps: [AppUsage] = []
     var pickups = 0
     var accent: AccentTheme = .sky
 
-    var dailyAverage: TimeInterval { days.isEmpty ? total : total / Double(days.count) }
+    var dailyAverage: TimeInterval { total / Double(max(1, periodDays)) }
 }
 
 struct InsightsReport: DeviceActivityReportScene {
-    let context: DeviceActivityReport.Context = .insights
+    let context: DeviceActivityReport.Context
+    let periodDays: Int
     let content: (InsightsSummary) -> InsightsReportView
 
     func makeConfiguration(representing data: DeviceActivityResults<DeviceActivityData>) async -> InsightsSummary {
         let state = SharedStore.loadState()
-        let hidden = state.hiddenFromInsights.applicationTokens
+        let hiddenApps = state.hiddenFromInsights.applicationTokens
+        let hiddenCategories = state.hiddenFromInsights.categoryTokens
+        let calendar = Calendar.current
         var dayTotals: [Date: TimeInterval] = [:]
         var apps: [String: InsightsSummary.AppUsage] = [:]
         var pickups = 0
 
         for await deviceData in data {
             for await segment in deviceData.activitySegments {
-                let day = Calendar.current.startOfDay(for: segment.dateInterval.start)
+                let day = calendar.startOfDay(for: segment.dateInterval.start)
                 var segmentTotal = segment.totalActivityDuration
                 for await category in segment.categories {
+                    if let token = category.category.token, hiddenCategories.contains(token) {
+                        segmentTotal -= category.totalActivityDuration
+                        continue
+                    }
                     for await activity in category.applications {
                         let token = activity.application.token
-                        if let token, hidden.contains(token) {
+                        if let token, hiddenApps.contains(token) {
                             segmentTotal -= activity.totalActivityDuration
                             continue
                         }
                         let name = activity.application.localizedDisplayName ?? activity.application.bundleIdentifier ?? "App"
-                        let key = activity.application.bundleIdentifier ?? name
+                        // The token identifies an app reliably; names and bundle IDs can be missing.
+                        let key = token.map { "token.\($0.hashValue)" } ?? activity.application.bundleIdentifier ?? name
                         var usage = apps[key] ?? .init(id: key, token: token, name: name, duration: 0, pickups: 0)
                         usage.duration += activity.totalActivityDuration
                         usage.pickups += activity.numberOfPickups
@@ -74,7 +84,11 @@ struct InsightsReport: DeviceActivityReportScene {
         }
 
         var summary = InsightsSummary()
-        summary.days = dayTotals.map { .init(date: $0.key, duration: $0.value) }.sorted { $0.date < $1.date }
+        summary.periodDays = periodDays
+        let today = calendar.startOfDay(for: Date())
+        summary.days = (0..<periodDays).reversed().compactMap { offset in
+            calendar.date(byAdding: .day, value: -offset, to: today).map { InsightsSummary.Day(date: $0, duration: dayTotals[$0] ?? 0) }
+        }
         summary.total = summary.days.reduce(0) { $0 + $1.duration }
         summary.apps = apps.values.filter { $0.duration >= 60 }.sorted { $0.duration > $1.duration }.prefix(12).map { $0 }
         summary.pickups = pickups
@@ -86,7 +100,7 @@ struct InsightsReport: DeviceActivityReportScene {
 struct InsightsReportView: View {
     let summary: InsightsSummary
 
-    private var isSingleDay: Bool { summary.days.count <= 1 }
+    private var isSingleDay: Bool { summary.periodDays <= 1 }
 
     private var accent: Color {
         let (light, dark) = summary.accent.accentHex
@@ -105,7 +119,7 @@ struct InsightsReportView: View {
         List {
             Section {
                 VStack(spacing: 4) {
-                    Text(isSingleDay ? "SCREEN TIME TODAY" : "PAST \(summary.days.count) DAYS")
+                    Text(isSingleDay ? "SCREEN TIME TODAY" : "PAST \(summary.periodDays) DAYS")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.tint)
                     Text(TimeFormat.duration(summary.total))
@@ -119,27 +133,33 @@ struct InsightsReportView: View {
                 .padding(.vertical, 8)
 
                 if !isSingleDay, summary.total > 0 {
-                    Chart(summary.days) { day in
-                        BarMark(
-                            x: .value("Day", day.date, unit: .day),
-                            y: .value("Hours", day.duration / 3600)
-                        )
-                        .foregroundStyle(accent.gradient)
-                        .cornerRadius(4)
+                    Chart {
+                        ForEach(summary.days) { day in
+                            BarMark(
+                                x: .value("Day", day.date, unit: .day),
+                                y: .value("Hours", day.duration / 3600)
+                            )
+                            .foregroundStyle(accent.gradient)
+                            .cornerRadius(4)
+                        }
+                        // Drawn once, not once per bar.
                         RuleMark(y: .value("Average", summary.dailyAverage / 3600))
                             .foregroundStyle(.secondary)
                             .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
                     }
                     .chartXAxis {
-                        AxisMarks(values: .stride(by: .day, count: summary.days.count > 7 ? 2 : 1)) { _ in
-                            AxisValueLabel(format: summary.days.count > 7 ? Date.FormatStyle.dateTime.day() : Date.FormatStyle.dateTime.weekday(.narrow))
+                        AxisMarks(values: .stride(by: .day, count: summary.periodDays > 7 ? 2 : 1)) { _ in
+                            AxisValueLabel(format: summary.periodDays > 7 ? Date.FormatStyle.dateTime.day() : Date.FormatStyle.dateTime.weekday(.narrow))
                         }
                     }
                     .chartYAxis {
                         AxisMarks { value in
                             AxisGridLine()
                             AxisValueLabel {
-                                if let hours = value.as(Double.self) { Text("\(Int(hours))h") }
+                                if let hours = value.as(Double.self) {
+                                    // Short days get gridlines below an hour; label those in minutes.
+                                    Text(hours > 0 && hours < 1 ? "\(Int((hours * 60).rounded()))m" : "\(Int(hours))h")
+                                }
                             }
                         }
                     }

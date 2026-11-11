@@ -92,8 +92,11 @@ final class ShieldConfigurationExtension: ShieldConfigurationDataSource {
         return ShieldConfiguration(
             backgroundBlurStyle: .systemUltraThinMaterial,
             backgroundColor: UIColor.systemBackground.withAlphaComponent(0.4),
-            icon: UIImage(systemName: reason?.title == "Time's up" ? "hourglass" : "lock.shield.fill")?
-                .withTintColor(accent, renderingMode: .alwaysOriginal),
+            // Without a size the symbol renders at text size and looks lost on the block screen.
+            icon: UIImage(
+                systemName: reason?.title == "Time's up" ? "hourglass" : "lock.shield.fill",
+                withConfiguration: UIImage.SymbolConfiguration(pointSize: 64, weight: .semibold)
+            )?.withTintColor(accent, renderingMode: .alwaysOriginal),
             title: ShieldConfiguration.Label(text: title, color: .label),
             subtitle: ShieldConfiguration.Label(text: lines.joined(separator: "\n"), color: .secondaryLabel),
             primaryButtonLabel: ShieldConfiguration.Label(text: "Close", color: .white),

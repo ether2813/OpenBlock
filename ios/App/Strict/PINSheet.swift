@@ -62,7 +62,9 @@ struct PINSheet: View {
                         .disabled(mode == .unlock ? current.isEmpty : first.isEmpty || second.isEmpty)
                 }
             }
-            .onAppear {
+            .task {
+                // Focus set while the sheet is still animating in is ignored.
+                try? await Task.sleep(nanoseconds: 400_000_000)
                 focused = mode == .set && !model.state.hasPin ? .first : .current
             }
         }
@@ -98,8 +100,8 @@ struct PINSheet: View {
                 error = message
                 UINotificationFeedbackGenerator().notificationOccurred(.error)
             } else {
-                dismiss()
                 onSuccess()
+                dismiss()
             }
         }
     }

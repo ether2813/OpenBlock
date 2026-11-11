@@ -26,6 +26,7 @@ struct StrictHomeView: View {
     @State private var showConfirm = false
     @State private var showPINUnlock = false
     @State private var showPINSetup = false
+    @State private var confirmAfterPINSetup = false
     @State private var confirmCooldown = false
 
     static let durationOptions = [15, 30, 60, 120, 300, 720, 1440, 4320, 10080]
@@ -58,8 +59,15 @@ struct StrictHomeView: View {
             .sheet(isPresented: $showPINUnlock) {
                 PINSheet(mode: .unlock).environmentObject(model)
             }
-            .sheet(isPresented: $showPINSetup) {
-                PINSheet(mode: .set) { showConfirm = true }.environmentObject(model)
+            // The confirmation opens only once the PIN sheet has fully closed; presenting one
+            // sheet while another is still dismissing is silently dropped by iOS.
+            .sheet(isPresented: $showPINSetup, onDismiss: {
+                if confirmAfterPINSetup {
+                    confirmAfterPINSetup = false
+                    showConfirm = true
+                }
+            }) {
+                PINSheet(mode: .set) { confirmAfterPINSetup = true }.environmentObject(model)
             }
         }
     }

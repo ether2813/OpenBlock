@@ -124,7 +124,7 @@ struct ScheduleEditorView: View {
             Text(draft.mode == .allowlist ? "Allowed apps" : "What to block")
         } footer: {
             if draft.mode == .allowlist {
-                Text("Phone, Messages, emergency calls and Settings always stay available.")
+                Text("Phone, emergency calls and Settings always stay available. Allow OpenBlock too if you want to open it while this schedule is blocking.")
             }
         }
     }
@@ -162,7 +162,7 @@ struct ScheduleEditorView: View {
             if let websiteError {
                 Text(websiteError).foregroundStyle(.red)
             } else {
-                Text("Blocks the site and its subdomains in Safari and in-app browsers while this schedule is blocking.")
+                Text("Blocked in Safari and in-app browsers while this schedule is blocking.")
             }
         }
     }
@@ -252,6 +252,9 @@ struct ScheduleEditorView: View {
     private var validationMessage: String? {
         if draft.daysMask & Schedule.allDays == 0 { return "Pick at least one day." }
         if draft.mode == .blocklist && !draft.hasTargets { return "Choose at least one app, category or website to block." }
+        if draft.selection.applicationTokens.count > BlockEnforcer.maxShieldTokens {
+            return "iOS handles up to \(BlockEnforcer.maxShieldTokens) individual apps per schedule. Pick whole categories instead."
+        }
         switch draft.type {
         case .time:
             if draft.windowMinutes == 0 { return "Start and end can't be the same time." }

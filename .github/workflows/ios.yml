@@ -59,6 +59,9 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
             build 2>&1 | tee xcodebuild.log | grep -E "error:|warning: .*deprecated|\*\* BUILD" || true
+          echo "::group::Compiler warnings in OpenBlock sources"
+          grep -E "\.swift:[0-9]+:[0-9]+: warning:" xcodebuild.log | sed "s|^$PWD/||" | sort -u | head -n 150 || true
+          echo "::endgroup::"
           grep -q "\*\* BUILD SUCCEEDED \*\*" xcodebuild.log
 
       - name: Show build errors

@@ -76,12 +76,20 @@ final class AppModel: ObservableObject {
         authorization = AuthorizationCenter.shared.authorizationStatus
         now = Date()
         endExpiredStrictSession()
+        if isAuthorized {
+            // Cheap when nothing changed, and restores monitoring iOS may have dropped.
+            ActivityScheduler.sync(state: state, now: now)
+        }
         enforce(force: true)
         refreshNotificationStatus()
     }
 
     private func tick(_ date: Date) {
-        now = date
+        // `now` drives what the screens show, so only publish it when the minute changes;
+        // publishing every tick would redraw the whole app (and reload Insights) every few seconds.
+        if Int(date.timeIntervalSince1970) / 60 != Int(now.timeIntervalSince1970) / 60 {
+            now = date
+        }
         endExpiredStrictSession()
         enforce(force: false)
     }
@@ -92,7 +100,9 @@ final class AppModel: ObservableObject {
     }
 
     private func endExpiredStrictSession() {
-        guard state.strict.hasExpired(now: now) else { return }
+        let date = Date()
+        guard state.strict.hasExpired(now: date) else { return }
+        now = date
         state.strict = StrictState()
         persist(sync: true)
         banner = Banner(text: "Strict Mode has ended", style: .success)
@@ -101,7 +111,7 @@ final class AppModel: ObservableObject {
     /// Re-applies restrictions. Unforced calls only do work when what should be blocked changed.
     private func enforce(force: Bool) {
         guard isAuthorized else { return }
-        let clock = self.clock
+        let clock = Clock()
         let hits = limitHits
         let active = state.schedules.filter { PolicyEngine.isScheduleBlocking($0, clock: clock, hits: hits) }.map(\.id.uuidString)
         let signature = active.sorted().joined(separator: ",") + "|\(PolicyEngine.isStrictActive(state, clock: clock))|\(clock.dayKey)"
@@ -117,7 +127,7 @@ final class AppModel: ObservableObject {
         if sync {
             let problems = ActivityScheduler.sync(state: state, now: now)
             if !problems.isEmpty {
-                banner = Banner(text: "iOS couldn't schedule some blocks. Try a longer time window.", style: .warning)
+                banner = Banner(text: "iOS couldn't schedule every block. Check the times, or use fewer schedules.", style: .warning)
             }
         }
         enforce(force: true)
@@ -146,7 +156,12 @@ final class AppModel: ObservableObject {
             }
         } catch {
             authorization = AuthorizationCenter.shared.authorizationStatus
-            banner = Banner(text: "Screen Time access wasn't granted. \(error.localizedDescription)", style: .warning)
+            if let familyError = error as? FamilyControlsError, familyError == .authorizationCanceled {
+                banner = Banner(text: "Screen Time access wasn't granted", style: .warning)
+            } else {
+                // Typical for a build signed without the Family Controls entitlement.
+                banner = Banner(text: "Screen Time access couldn't be turned on. This build may not be signed for Screen Time.", style: .warning)
+            }
         }
     }
 
@@ -158,9 +173,11 @@ final class AppModel: ObservableObject {
     }
 
     func requestNotifications() async {
-        let granted = (try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])) ?? false
+        // Once denied, iOS never shows the prompt again; only Settings can turn them back on.
+        let wasDenied = notificationStatus == .denied
+        _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])
         refreshNotificationStatus()
-        if !granted, notificationStatus == .denied, let url = URL(string: UIApplication.openSettingsURLString) {
+        if wasDenied, let url = URL(string: UIApplication.openSettingsURLString) {
             await UIApplication.shared.open(url)
         }
     }
@@ -174,7 +191,7 @@ final class AppModel: ObservableObject {
     func saveSchedule(_ schedule: Schedule) {
         var schedule = schedule
         schedule.updatedAt = Date()
-        schedule.websites = schedule.mode == .allowlist ? [] : schedule.websites
+        let previous = state.schedules.first { $0.id == schedule.id }
         update { state in
             if let index = state.schedules.firstIndex(where: { $0.id == schedule.id }) {
                 state.schedules[index] = schedule
@@ -182,10 +199,19 @@ final class AppModel: ObservableObject {
                 state.schedules.append(schedule)
             }
         }
-        // A changed usage limit starts from a clean slate.
-        SharedStore.clearLimitHit(ActivityNames.scheduleEvent(schedule.id))
-        enforce(force: true)
+        // A changed usage limit starts from a clean slate; renaming or changing days must not
+        // lift a limit that was already reached today.
+        let limitChanged = previous.map {
+            $0.type != schedule.type || $0.usageLimitMinutes != schedule.usageLimitMinutes || $0.selection != schedule.selection
+        } ?? true
+        if limitChanged {
+            SharedStore.clearLimitHit(ActivityNames.scheduleEvent(schedule.id))
+            enforce(force: true)
+        }
         banner = Banner(text: "Schedule saved", style: .success)
+        if state.notifyWhenBlocking, notificationStatus == .notDetermined {
+            Task { await requestNotifications() }
+        }
     }
 
     func canEditSchedule() -> Bool {
@@ -225,16 +251,17 @@ final class AppModel: ObservableObject {
         let wantedSet = Set(wanted)
         let existing = Set(state.appLimits.map(\.target))
         let removing = existing.subtracting(wantedSet)
-        if !removing.isEmpty, isEditingLocked {
-            banner = Banner(text: "Strict Mode is on — limits can be added, not removed", style: .warning)
-        }
+        let locked = isEditingLocked
         update { state in
             for target in wanted where !existing.contains(target) {
                 state.appLimits.append(AppLimit(target: target))
             }
-            if !self.isEditingLocked {
+            if !locked {
                 state.appLimits.removeAll { removing.contains($0.target) }
             }
+        }
+        if !removing.isEmpty, locked {
+            banner = Banner(text: "Strict Mode is on — limits can be added, not removed", style: .warning)
         }
     }
 
@@ -296,7 +323,10 @@ final class AppModel: ObservableObject {
     // MARK: Blocking options
 
     func setBlockAdultSites(_ on: Bool) {
-        if !on, refuseWhileLocked("Strict Mode is on — this can't be turned off until it ends") { return }
+        if !on, isStrictActive {
+            banner = Banner(text: "Strict Mode is on — this can't be turned off until it ends", style: .warning)
+            return
+        }
         update(sync: false) { $0.blockAdultSites = on }
     }
 
@@ -416,7 +446,11 @@ final class AppModel: ObservableObject {
     }
 
     func importBackup(_ data: Data) {
-        if refuseWhileLocked("Strict Mode is on — backups can't be restored until it ends") { return }
+        // A backup can loosen anything, including what Strict Mode itself locks.
+        if isStrictActive {
+            banner = Banner(text: "Strict Mode is on — backups can't be restored until it ends", style: .warning)
+            return
+        }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         guard let backup = try? decoder.decode(Backup.self, from: data), backup.format == "openblock-backup" else {

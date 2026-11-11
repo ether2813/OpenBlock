@@ -22,28 +22,49 @@ enum InsightPeriod: String, CaseIterable, Identifiable {
         case .twoWeeks: return 14
         }
     }
+
+    var context: DeviceActivityReport.Context {
+        switch self {
+        case .day: return .insightsDay
+        case .week: return .insightsWeek
+        case .twoWeeks: return .insightsTwoWeeks
+        }
+    }
+
+    /// Whole days ending now. Built once per visit: a filter that changes on every redraw would
+    /// make the report reload continuously.
+    func filter(endingAt now: Date = Date()) -> DeviceActivityFilter {
+        let calendar = Calendar.current
+        let start = calendar.date(byAdding: .day, value: -(days - 1), to: calendar.startOfDay(for: now)) ?? now
+        return DeviceActivityFilter(
+            segment: .daily(during: DateInterval(start: start, end: max(now, start))),
+            users: .all,
+            devices: .init([.iPhone, .iPad])
+        )
+    }
 }
 
 struct InsightsView: View {
     @EnvironmentObject private var model: AppModel
     @State private var period: InsightPeriod = .day
+    @State private var filter = InsightPeriod.day.filter()
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                Picker("Period", selection: $period) {
+                // Period and filter change together, so the report loads once per switch.
+                Picker("Period", selection: Binding(get: { period }, set: { period = $0; filter = $0.filter() })) {
                     ForEach(InsightPeriod.allCases) { Text($0.title).tag($0) }
                 }
                 .pickerStyle(.segmented)
                 .padding(.horizontal)
-                .padding(.bottom, 8)
+                .padding(.vertical, 8)
 
                 if model.isAuthorized {
                     // The report is drawn by the Screen Time report extension; usage data never
                     // reaches the app itself.
-                    DeviceActivityReport(.insights, filter: filter)
+                    DeviceActivityReport(period.context, filter: filter)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .id(period)
                 } else {
                     List { Section { ScreenTimeSetupCard() } }
                         .listStyle(.insetGrouped)
@@ -51,6 +72,8 @@ struct InsightsView: View {
             }
             .background(Color(.systemGroupedBackground))
             .navigationTitle("Insights")
+            .navigationBarTitleDisplayMode(.inline)
+            .onAppear { filter = period.filter() }
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     NavigationLink {
@@ -61,17 +84,6 @@ struct InsightsView: View {
                 }
             }
         }
-    }
-
-    private var filter: DeviceActivityFilter {
-        let calendar = Calendar.current
-        let now = Date()
-        let start = calendar.date(byAdding: .day, value: -(period.days - 1), to: calendar.startOfDay(for: now)) ?? now
-        return DeviceActivityFilter(
-            segment: .daily(during: DateInterval(start: start, end: now)),
-            users: .all,
-            devices: .init([.iPhone, .iPad])
-        )
     }
 }
 

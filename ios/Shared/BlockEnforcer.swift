@@ -13,6 +13,8 @@ extension ManagedSettingsStore.Name {
 enum BlockEnforcer {
     /// The system web filter accepts at most 50 specific domains.
     static let maxFilteredDomains = 50
+    /// iOS ignores a shield (or an exception list) with more than 50 individual tokens.
+    static let maxShieldTokens = 50
 
     static func apply(state: AppState, clock: Clock = Clock(), hits: [String: String] = SharedStore.limitHits()) {
         applyRules(state: state, clock: clock, hits: hits)
@@ -54,10 +56,11 @@ enum BlockEnforcer {
         }
 
         let store = ManagedSettingsStore(named: .openBlockRules)
-        store.shield.applications = apps.isEmpty ? nil : apps
-        store.shield.webDomains = webTokens.isEmpty ? nil : webTokens
+        // Past the token limit iOS would drop the whole set, so block as much as it accepts.
+        store.shield.applications = apps.isEmpty ? nil : Set(apps.prefix(maxShieldTokens))
+        store.shield.webDomains = webTokens.isEmpty ? nil : Set(webTokens.prefix(maxShieldTokens))
         if let allowed {
-            store.shield.applicationCategories = .all(except: allowed)
+            store.shield.applicationCategories = .all(except: Set(allowed.prefix(maxShieldTokens)))
         } else if !categories.isEmpty {
             store.shield.applicationCategories = .specific(categories, except: Set<ApplicationToken>())
         } else {

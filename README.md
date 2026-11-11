@@ -14,7 +14,7 @@ There are no accounts, analytics, ads or network calls, and everything stays on 
 | --- | --- |
 | **Schedules** | Blocklist or allowlist. Triggered by time of day (overnight windows included) or a daily usage limit, on chosen days. Includes duplicate, pause and swipe-to-delete. |
 | **App limits** | Per-app or per-category daily limits, or "always block". |
-| **Websites** | Always-blocked domains plus per-schedule domains. Subdomains are included, and blocking works in Safari and in-app browsers. |
+| **Websites** | Always-blocked domains plus per-schedule domains, blocked in Safari and in-app browsers. |
 | **Adult content** | Apple's built-in adult website filter, behind a single switch. |
 | **Strict Mode** | Five unlock methods: timer, follow schedules, cooldown, charger and PIN. While it's on, it can lock in-app edits, stop apps being deleted or installed, and keep the date and time on automatic. |
 | **Block screen** | A custom shield that shows the reason ("Focus time · until 5:00 PM"), your own message and your accent color. |

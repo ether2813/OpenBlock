@@ -40,7 +40,10 @@ enum ActivityScheduler {
                 signatures[name] = plan.signature
             } catch {
                 signatures[name] = nil
-                problems.append("\(name): \(error.localizedDescription)")
+                // A Strict Mode timer iOS won't monitor still ends when OpenBlock is next opened.
+                if name != ActivityNames.strict {
+                    problems.append("\(name): \(error.localizedDescription)")
+                }
             }
         }
         SharedStore.setActivitySignatures(signatures)
@@ -62,13 +65,23 @@ enum ActivityScheduler {
             switch schedule.type {
             case .time:
                 guard schedule.windowMinutes >= Schedule.minimumWindowMinutes else { continue }
-                let start = schedule.isAllDay ? wholeDay.start : components(schedule.startMinutes)
-                let end = schedule.isAllDay || schedule.endMinutes % 1440 == 0 ? wholeDay.end : components(schedule.endMinutes)
-                plans[ActivityNames.timePrefix + schedule.id.uuidString] = Plan(
-                    schedule: DeviceActivitySchedule(intervalStart: start, intervalEnd: end, repeats: true),
-                    events: [:],
-                    signature: "time|\(schedule.startMinutes)|\(schedule.endMinutes)"
-                )
+                let id = schedule.id.uuidString
+                let start = schedule.startMinutes % 1440
+                let lastMinute = 1439
+                let end = min(schedule.endMinutes, lastMinute)
+                if !schedule.isOvernight, end - start >= Schedule.minimumWindowMinutes {
+                    // The common case: one interval whose start and end are the window's.
+                    plans[ActivityNames.timePrefix + id] = Plan(
+                        schedule: DeviceActivitySchedule(intervalStart: components(start), intervalEnd: components(end), repeats: true),
+                        events: [:],
+                        signature: "time|\(start)|\(end)"
+                    )
+                } else {
+                    // Overnight windows (and ones squeezed against midnight) never cross midnight
+                    // inside one interval: a short interval wakes the monitor at each boundary.
+                    plans[ActivityNames.timePrefix + id] = wakeUp(at: start)
+                    plans[ActivityNames.timeEndPrefix + id] = wakeUp(at: schedule.endMinutes % 1440)
+                }
             case .usageLimit:
                 guard schedule.mode == .blocklist, schedule.usageLimitMinutes > 0,
                       !schedule.selection.isEmptySelection else { continue }
@@ -120,12 +133,14 @@ enum ActivityScheduler {
             default: return nil
             }
         }()
-        if let strictEnd, strictEnd.timeIntervalSince(now) >= TimeInterval(Schedule.minimumWindowMinutes * 60) {
+        let strictStart = (strict.method == .cooldown ? strict.unlockRequestedAt : strict.startedAt) ?? now
+        if let strictEnd, strictEnd > now,
+           strictEnd.timeIntervalSince(strictStart) >= TimeInterval(Schedule.minimumWindowMinutes * 60) {
             let calendar = Calendar.current
             let fields: Set<Calendar.Component> = [.year, .month, .day, .hour, .minute, .second]
             plans[ActivityNames.strict] = Plan(
                 schedule: DeviceActivitySchedule(
-                    intervalStart: calendar.dateComponents(fields, from: now),
+                    intervalStart: calendar.dateComponents(fields, from: strictStart),
                     intervalEnd: calendar.dateComponents(fields, from: strictEnd),
                     repeats: false
                 ),
@@ -134,6 +149,18 @@ enum ActivityScheduler {
             )
         }
         return plans
+    }
+
+    /// A short daily interval that starts (or, close to midnight, ends) at `minute`, purely to
+    /// wake the monitor extension at that time of day.
+    private static func wakeUp(at minute: Int) -> Plan {
+        let length = Schedule.minimumWindowMinutes + 5
+        let range = minute + length <= 1439 ? (minute, minute + length) : (minute - length, minute)
+        return Plan(
+            schedule: DeviceActivitySchedule(intervalStart: components(range.0), intervalEnd: components(range.1), repeats: true),
+            events: [:],
+            signature: "wake|\(range.0)|\(range.1)"
+        )
     }
 
     private static func components(_ minuteOfDay: Int) -> DateComponents {
