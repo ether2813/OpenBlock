@@ -156,7 +156,8 @@ final class AppModel: ObservableObject {
             }
         } catch {
             authorization = AuthorizationCenter.shared.authorizationStatus
-            if let familyError = error as? FamilyControlsError, familyError == .authorizationCanceled {
+            // Matched by case, not ==: FamilyControlsError only gained Equatable in iOS 16.4.
+            if let familyError = error as? FamilyControlsError, case .authorizationCanceled = familyError {
                 banner = Banner(text: "Screen Time access wasn't granted", style: .warning)
             } else {
                 // Typical for a build signed without the Family Controls entitlement.
