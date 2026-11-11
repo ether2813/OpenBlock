@@ -2,11 +2,14 @@ name: iOS build
 
 on:
   push:
+    # Both filters are needed: with only `tags`, GitHub ignores every branch push.
+    branches:
+      - "**"
+    tags:
+      - "v*"
     paths:
       - "ios/**"
       - ".github/workflows/ios.yml"
-    tags:
-      - "v*"
   pull_request:
     paths:
       - "ios/**"
